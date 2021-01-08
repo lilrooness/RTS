@@ -1,3 +1,4 @@
 clearColor 0.50 0.60 0.80 1.0
 cameraPos 0.0 100.0 0.0
 tankSpeed 0.1
+windowSize 640 480

@@ -13,7 +13,6 @@ layout (location=5) in vec4 tint;
 layout (location=1) uniform mat4 model;
 layout (location=2) uniform mat4 view;
 layout (location=3) uniform mat4 projection;
-layout (location=4) uniform float xRotation;
 
 out float intensity;
 out vec4 tintColor;

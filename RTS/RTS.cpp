@@ -14,9 +14,6 @@
 
 #undef main
 
-const int SCREEN_WIDTH = 1280;
-const int SCREEN_HEIGHT = 1280;
-
 const GLuint POS_ATTRIB_LOC = 1;
 const GLuint TRANSLATION_ATTRIB_LOC = 2;
 const GLuint NORMAL_ATTRIB_LOC = 3;
@@ -204,7 +201,7 @@ int main() {
     SDL_Window* window = NULL;
     SDL_GLContext context = NULL;
 
-    window = SDL_CreateWindow("RTS game", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
+    window = SDL_CreateWindow("RTS game", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, settings.windowWidth, settings.windowHeight, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
     context = SDL_GL_CreateContext(window);
 
     if (window == NULL) {
@@ -289,8 +286,8 @@ int main() {
                 quit = true;
             }
             else if (e.type == SDL_MOUSEMOTION) {
-                mouseX = (-1.0f + ((float)e.motion.x / (float)SCREEN_WIDTH * 2.0f));
-                mouseY = (1.0f - ((float)e.motion.y / (float)SCREEN_HEIGHT * 2.0f));
+                mouseX = (-1.0f + ((float)e.motion.x / (float)settings.windowWidth * 2.0f));
+                mouseY = (1.0f - ((float)e.motion.y / (float)settings.windowHeight * 2.0f));
                 
                 auto rayDirection = screenToRay(mouseX, mouseY, projMat, viewMat);
                 
@@ -349,18 +346,16 @@ int main() {
             glUniformMatrix4fv(1, 1, GL_FALSE, glm::value_ptr(modelMat));
             glUniformMatrix4fv(2, 1, GL_FALSE, glm::value_ptr(viewMat));
             glUniformMatrix4fv(3, 1, GL_FALSE, glm::value_ptr(projMat));
-            glUniform1f(4, 0);
 
             glBindVertexArray(tank.VAO);
             glDrawElementsInstanced(GL_TRIANGLES, scene->mMeshes[0]->mNumFaces * 3, GL_UNSIGNED_INT, NULL, game.tanks.size());
 
-            glUniform1f(4, xRotation *-1.0f);
             glBindVertexArray(turret.VAO);
             glDrawElementsInstanced(GL_TRIANGLES, scene->mMeshes[1]->mNumFaces * 3, GL_UNSIGNED_INT, NULL, game.tanks.size());
 
             glBindVertexArray(gun.VAO);
             glDrawElementsInstanced(GL_TRIANGLES, scene->mMeshes[2]->mNumFaces * 3, GL_UNSIGNED_INT, NULL, game.tanks.size());
-            
+
             glUseProgram(basicShaderProgramId);
             glUniformMatrix4fv(1, 1, GL_FALSE, glm::value_ptr(modelMat));
             glUniformMatrix4fv(2, 1, GL_FALSE, glm::value_ptr(viewMat));
