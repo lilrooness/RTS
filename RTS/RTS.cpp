@@ -326,6 +326,7 @@ int main() {
     while (!quit) {
 
         int timeNow = SDL_GetTicks();
+
         if (lastFrame == 0 || timeNow - lastFrame >= (1000 / 60)) {
             lastFrame = timeNow;
             tick(&game);
@@ -359,8 +360,8 @@ int main() {
                         resetSelectionQuadVertices(&game);
                     }
                 }
-                else if (e.button.type == SDL_BUTTON_RIGHT) {
-                    
+                else if (e.button.button == SDL_BUTTON_RIGHT) {
+                    game.secondaryButtonClicked = true;
                 }
             }
             else if (e.type == SDL_MOUSEBUTTONUP) {

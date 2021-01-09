@@ -34,6 +34,11 @@ struct MouseDragData {
 	glm::vec3 drag;
 };
 
+struct Waypoint {
+	glm::vec3 point;
+	bool set{ false };
+};
+
 // Tank game data
 struct Tank {
 	Index index;
@@ -41,6 +46,7 @@ struct Tank {
 	glm::vec3 direction;
 	float speed{0.1};
 	bool selected{ false };
+	Waypoint waypoint;
 };
 
 // All Tanks Rendering Data (buffers)
@@ -57,6 +63,7 @@ struct Game {
 	MouseDragData mouseDragData;
 	bool primaryButtonDown{ false };
 	bool secondaryButtonDown{ false };
+	bool secondaryButtonClicked{ false };
 	glm::vec3 currentMouseGroundIntersection;
 	GLfloat groundSelectionQuadVertices[12]{
 		-1.0f, -1.0f, 0.0f,
@@ -65,6 +72,58 @@ struct Game {
 		-1.0f, 1.0f, 0.0f,
 	}; //length 12 (4 points)
 };
+
+bool validTankRef(IndexReference tankRef, Game* game) {
+	if (tankRef.generation != game->tanks[tankRef.index].index.generation || game->tanks[tankRef.index].index.deleted) {
+		return false;
+	}
+
+	return true;
+}
+
+void tickTank(IndexReference tankRef, Game *game) {
+	
+	if (!validTankRef(tankRef, game)) {
+		std::cout << "invalid tank reference" << std::endl;
+		return;
+	}
+
+	glm::vec3 pos(1.0f);
+	pos.x = game->tanksData.positions[3 * tankRef.index];
+	pos.y = game->tanksData.positions[3 * tankRef.index + 1];
+	pos.z = game->tanksData.positions[3 * tankRef.index + 2];
+
+	Tank& tank = game->tanks[tankRef.index];
+
+	if (tank.waypoint.set) {
+		if (glm::length(pos - tank.waypoint.point) < 1) {
+			tank.waypoint.set = false;
+		} else {
+			float newHeading = -1.0f * atan2(tank.waypoint.point.x - pos.x, tank.waypoint.point.z - pos.z);
+			game->tanksData.headings[tankRef.index] = newHeading;
+
+			glm::vec4 newDirection =
+				glm::vec4(glm::vec3(0.0f, 0.0f, 1.0f), 1.0f) *
+				glm::rotate(
+					glm::mat4(1.0),
+					newHeading,
+					glm::vec3(0.0f, 1.0f, 0.0f)
+				);
+
+			newDirection = glm::normalize(newDirection) * tank.speed;
+
+			tank.direction.x = newDirection.x;
+			tank.direction.y = newDirection.y;
+			tank.direction.z = newDirection.z;
+
+			//advance the tank by the new direction * speed
+			game->tanksData.positions[3 * tankRef.index] += tank.direction.x;
+			game->tanksData.positions[3 * tankRef.index + 1] += tank.direction.y;
+			game->tanksData.positions[3 * tankRef.index + 2] += tank.direction.z;
+		}
+
+	}
+}
 
 //assumes a and b have lie on the x,z ground plane (have y coord of zero)
 bool makeQuad(glm::vec3 a, glm::vec3 b, GLfloat* quadVertexBuffer_out) {
@@ -132,31 +191,12 @@ void tick(Game* game) {
 
 	for (int i=0; i < game->tanks.size(); i++) {
 		Tank* tank = &game->tanks[i];
-		
-		//Set the tank direction from the heading
-		float heading = game->tanksData.headings[i];
-		glm::vec4 newDirection = 
-			glm::vec4(glm::vec3(0.0f, 0.0f, 1.0f), 1.0f) *
-			glm::rotate(
-				glm::mat4(1.0),
-				heading,
-				glm::vec3(0.0f, 1.0f, 0.0f)
-			);
 
-		newDirection = glm::normalize(newDirection) * tank->speed;
-
-		tank->direction.x = newDirection.x;
-		tank->direction.y = newDirection.y;
-		tank->direction.z = newDirection.z;
-
-		//advance the tank by the new direction * speed
-		game->tanksData.positions[(i * 3)] += tank->direction.x;
-		game->tanksData.positions[(i * 3) + 1] += tank->direction.y;
-		game->tanksData.positions[(i * 3) + 2] += tank->direction.z;
+		tickTank(IndexReference{ tank->index.generation, i }, game);
 
 		if (game->primaryButtonDown) {
 			auto pos = glm::vec3(game->tanksData.positions[i * 3], 0.0f, game->tanksData.positions[(i * 3) + 2]);
-			
+
 			//quad verteces
 			auto p1 = glm::vec3(game->groundSelectionQuadVertices[0], game->groundSelectionQuadVertices[1], game->groundSelectionQuadVertices[2]);
 			auto p2 = glm::vec3(game->groundSelectionQuadVertices[3], game->groundSelectionQuadVertices[4], game->groundSelectionQuadVertices[5]);
@@ -170,15 +210,21 @@ void tick(Game* game) {
 				game->tanksData.tint[(i * 4) + 2] = 0.1;
 				game->tanksData.tint[(i * 4) + 3] = 1.0;
 				tank->selected = true;
-			} else {
+			}
+			else {
 				game->tanksData.tint[(i * 4)] = DEFAULT_COLOR.x;
 				game->tanksData.tint[(i * 4) + 1] = DEFAULT_COLOR.y;
 				game->tanksData.tint[(i * 4) + 2] = DEFAULT_COLOR.z;
 				game->tanksData.tint[(i * 4) + 3] = DEFAULT_COLOR.w;
 				tank->selected = false;
 			}
+		} else if (game->secondaryButtonClicked && tank->selected) {
+			game->tanks[i].waypoint.point = game->currentMouseGroundIntersection;
+			game->tanks[i].waypoint.set = true;
 		}
 	}
+
+	game->secondaryButtonClicked = false;
 }
 
 IndexReference addTank(Game* game, float x, float y, float z, int health) {
