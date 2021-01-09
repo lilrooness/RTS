@@ -14,6 +14,8 @@
 
 #undef main
 
+int lastFrame = 0;
+
 const GLuint POS_ATTRIB_LOC = 1;
 const GLuint TRANSLATION_ATTRIB_LOC = 2;
 const GLuint NORMAL_ATTRIB_LOC = 3;
@@ -31,11 +33,29 @@ struct Model {
     GLuint TRANSLATION_VBO;
     GLuint HEADINGS_VBO;
     GLuint TINT_VBO;
+    GLuint shaderProgramID;
 };
 
 Model turret;
 Model tank;
 Model gun;
+
+GLuint shaderProgramId;
+GLuint basicShaderProgramId;
+
+GLuint mousePointVAO;
+GLuint mousePointVBO;
+
+GLuint selectionQuadVAO;
+GLuint selectionQuadVBO;
+GLuint selectionQuadElementsBuffer;
+
+glm::mat4 projMat;
+glm::mat4 modelMat;
+glm::mat4 viewMat;
+
+SDL_Window* window = NULL;
+SDL_GLContext context = NULL;
 
 //takes normalised divice coordinates ([-1, 1], [-1, 1]) and turns them into a ray direction from the camera
 glm::vec4 screenToRay(float mouseX, float mouseY, glm::mat4 projectionMatrix, glm::mat4 viewMatrix) {
@@ -109,41 +129,30 @@ void loadMeshToVAO(aiMesh *mesh, Model *model) {
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 
+template<typename T>
+void refreshBuffer(GLuint type, GLuint handle, vector<T> data, GLuint mode) {
+    glBindBuffer(type, handle);
+    glBufferData(type, sizeof(T) * data.size(), data.data(), mode);
+    glBindBuffer(type, 0);
+}
+
 void refreshBuffers(Game* game) {
-    glBindBuffer(GL_ARRAY_BUFFER, gun.TRANSLATION_VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * game->tanksData.positions.size(), game->tanksData.positions.data(), GL_STATIC_DRAW);
+    refreshBuffer<GLfloat>(GL_ARRAY_BUFFER, gun.TRANSLATION_VBO, game->tanksData.positions, GL_STATIC_DRAW);
+    refreshBuffer<GLfloat>(GL_ARRAY_BUFFER, tank.TRANSLATION_VBO, game->tanksData.positions, GL_STATIC_DRAW);
+    refreshBuffer<GLfloat>(GL_ARRAY_BUFFER, turret.TRANSLATION_VBO, game->tanksData.positions, GL_STATIC_DRAW);
+    refreshBuffer<GLfloat>(GL_ARRAY_BUFFER, tank.HEADINGS_VBO, game->tanksData.headings, GL_STATIC_DRAW);
+    refreshBuffer<GLfloat>(GL_ARRAY_BUFFER, gun.HEADINGS_VBO, game->tanksData.headings, GL_STATIC_DRAW);
+    refreshBuffer<GLfloat>(GL_ARRAY_BUFFER, turret.HEADINGS_VBO, game->tanksData.headings, GL_STATIC_DRAW);
+    refreshBuffer<GLfloat>(GL_ARRAY_BUFFER, tank.TINT_VBO, game->tanksData.tint, GL_STATIC_DRAW);
+    refreshBuffer<GLfloat>(GL_ARRAY_BUFFER, turret.TINT_VBO, game->tanksData.tint, GL_STATIC_DRAW);
+    refreshBuffer<GLfloat>(GL_ARRAY_BUFFER, gun.TINT_VBO, game->tanksData.tint, GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ARRAY_BUFFER, mousePointVBO);
+    glBufferData(GL_ARRAY_BUFFER, 3 * sizeof(GLfloat), glm::value_ptr(game->currentMouseGroundIntersection), GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-    glBindBuffer(GL_ARRAY_BUFFER, tank.TRANSLATION_VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * game->tanksData.positions.size(), game->tanksData.positions.data(), GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-    glBindBuffer(GL_ARRAY_BUFFER, turret.TRANSLATION_VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * game->tanksData.positions.size(), game->tanksData.positions.data(), GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-    glBindBuffer(GL_ARRAY_BUFFER, tank.HEADINGS_VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * game->tanksData.headings.size(), game->tanksData.headings.data(), GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-    glBindBuffer(GL_ARRAY_BUFFER, gun.HEADINGS_VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * game->tanksData.headings.size(), game->tanksData.headings.data(), GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-    glBindBuffer(GL_ARRAY_BUFFER, turret.HEADINGS_VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * game->tanksData.headings.size(), game->tanksData.headings.data(), GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-    glBindBuffer(GL_ARRAY_BUFFER, tank.TINT_VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * game->tanksData.tint.size(), game->tanksData.tint.data(), GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    
-    glBindBuffer(GL_ARRAY_BUFFER, turret.TINT_VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * game->tanksData.tint.size(), game->tanksData.tint.data(), GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    
-    glBindBuffer(GL_ARRAY_BUFFER, gun.TINT_VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * game->tanksData.tint.size(), game->tanksData.tint.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, selectionQuadVBO);
+    glBufferData(GL_ARRAY_BUFFER, 12 * sizeof(GLfloat), game->groundSelectionQuadVertices, GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
@@ -151,17 +160,57 @@ void initGame(Game* game) {
     for (int i = 0; i < 10; i++) {
         addTank(game, -30.0f + (i * 8.0f), 0.0f, 0.0f, 0.0f);
     }
+}
 
-    refreshBuffers(game);
+void render(Game* game, Settings settings, const aiScene* scene) {
 
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_DEPTH_TEST);
+    glClearColor(settings.clearColor.x, settings.clearColor.y, settings.clearColor.z, settings.clearColor.w);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glPointSize(2.0f);
+
+    glUseProgram(tank.shaderProgramID);
+    glUniformMatrix4fv(1, 1, GL_FALSE, glm::value_ptr(modelMat));
+    glUniformMatrix4fv(2, 1, GL_FALSE, glm::value_ptr(viewMat));
+    glUniformMatrix4fv(3, 1, GL_FALSE, glm::value_ptr(projMat));
+
+    glBindVertexArray(tank.VAO);
+    glDrawElementsInstanced(GL_TRIANGLES, scene->mMeshes[0]->mNumFaces * 3, GL_UNSIGNED_INT, NULL, game->tanks.size());
+
+    glBindVertexArray(turret.VAO);
+    glDrawElementsInstanced(GL_TRIANGLES, scene->mMeshes[1]->mNumFaces * 3, GL_UNSIGNED_INT, NULL, game->tanks.size());
+
+    glBindVertexArray(gun.VAO);
+    glDrawElementsInstanced(GL_TRIANGLES, scene->mMeshes[2]->mNumFaces * 3, GL_UNSIGNED_INT, NULL, game->tanks.size());
+
+    glUseProgram(basicShaderProgramId);
+    glUniformMatrix4fv(1, 1, GL_FALSE, glm::value_ptr(modelMat));
+    glUniformMatrix4fv(2, 1, GL_FALSE, glm::value_ptr(viewMat));
+    glUniformMatrix4fv(3, 1, GL_FALSE, glm::value_ptr(projMat));
+    glUniform1f(4, 0.5);
+
+    glPointSize(20.0f);
+    glBindVertexArray(mousePointVAO);
+    glDrawArrays(GL_POINTS, 0, 1);
+
+    if (game->primaryButtonDown) {
+        glBindVertexArray(selectionQuadVAO);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, NULL);
+    }
+
+    SDL_GL_SwapWindow(window);
+
+    auto glError = glGetError();
+
+    if (glError > 0) {
+        std::cout << "OpenGL Error: " << glError << std::endl;
+    }
 }
 
 int main() {
-
-    glm::mat4 projMat;
-    glm::mat4 modelMat;
-    glm::mat4 viewMat;
-
     Settings settings;
     load_settings_file(&settings, "res\\settings");
 
@@ -198,9 +247,6 @@ int main() {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
 
-    SDL_Window* window = NULL;
-    SDL_GLContext context = NULL;
-
     window = SDL_CreateWindow("RTS game", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, settings.windowWidth, settings.windowHeight, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
     context = SDL_GL_CreateContext(window);
 
@@ -225,8 +271,12 @@ int main() {
         return -1;
     }
 
-    GLuint shaderProgramId = create_shader_program("res/shaders/shader.vs", "res/shaders/shader.fs");
-    GLuint basicShaderProgramId = create_shader_program("res/shaders/basic/shader.vs", "res/shaders/basic/shader.fs");
+    shaderProgramId = create_shader_program("res/shaders/shader.vs", "res/shaders/shader.fs");
+    basicShaderProgramId = create_shader_program("res/shaders/basic/shader.vs", "res/shaders/basic/shader.fs");
+
+    tank.shaderProgramID = shaderProgramId;
+    turret.shaderProgramID = shaderProgramId;
+    gun.shaderProgramID = shaderProgramId;
 
     loadMeshToVAO(scene->mMeshes[0], &tank);
     loadMeshToVAO(scene->mMeshes[1], &turret);
@@ -236,15 +286,12 @@ int main() {
     SDL_Event e;
 
     GLfloat xRotation = 0.0f;
-    int lastFrame = SDL_GetTicks();
+    lastFrame = SDL_GetTicks();
 
     Game game;
     initGame(&game);
 
     float mouseX{ 0.0f }, mouseY{ 0.0 };
-
-    GLuint mousePointVAO;
-    GLuint mousePointVBO;
 
     glGenVertexArrays(1, &mousePointVAO);
     glBindVertexArray(mousePointVAO);
@@ -259,10 +306,6 @@ int main() {
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-
-    GLuint selectionQuadVAO;
-    GLuint selectionQuadVBO;
-    GLuint selectionQuadElementsBuffer;
 
     glGenVertexArrays(1, &selectionQuadVAO);
     glBindVertexArray(selectionQuadVAO);
@@ -281,6 +324,15 @@ int main() {
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     while (!quit) {
+
+        int timeNow = SDL_GetTicks();
+        if (lastFrame == 0 || timeNow - lastFrame >= (1000 / 60)) {
+            lastFrame = timeNow;
+            tick(&game);
+            refreshBuffers(&game);
+            render(&game, settings, scene);
+        }
+
         while (SDL_PollEvent(&e) != 0) {
             if (e.type == SDL_QUIT) {
                 quit = true;
@@ -293,15 +345,8 @@ int main() {
                 
                 rayGroundPlaneIntersection(rayDirection, cameraPos, &game.currentMouseGroundIntersection);
 
-                glBindBuffer(GL_ARRAY_BUFFER, mousePointVBO);
-                glBufferData(GL_ARRAY_BUFFER, 3 * sizeof(GLfloat), glm::value_ptr(game.currentMouseGroundIntersection), GL_STATIC_DRAW);
-                glBindBuffer(GL_ARRAY_BUFFER, 0);
-
                 if (game.primaryButtonDown) {
                     game.mouseDragData.drag = game.currentMouseGroundIntersection;
-                    glBindBuffer(GL_ARRAY_BUFFER, selectionQuadVBO);
-                    glBufferData(GL_ARRAY_BUFFER, 12 * sizeof(GLfloat), game.groundSelectionQuadVertices, GL_STATIC_DRAW);
-                    glBindBuffer(GL_ARRAY_BUFFER, 0);
                 }
             }
             else if (e.type == SDL_MOUSEBUTTONDOWN) {
@@ -312,9 +357,6 @@ int main() {
                         game.mouseDragData.origin = game.currentMouseGroundIntersection;
                         game.mouseDragData.drag = game.currentMouseGroundIntersection;
                         resetSelectionQuadVertices(&game);
-                        glBindBuffer(GL_ARRAY_BUFFER, selectionQuadVBO);
-                        glBufferData(GL_ARRAY_BUFFER, 12 * sizeof(GLfloat), game.groundSelectionQuadVertices, GL_STATIC_DRAW);
-                        glBindBuffer(GL_ARRAY_BUFFER, 0);
                     }
                 }
                 else if (e.button.type == SDL_BUTTON_RIGHT) {
@@ -329,62 +371,6 @@ int main() {
                     }
                 }
             }
-        }
-
-        int timeNow = SDL_GetTicks();
-        if (lastFrame == 0 || timeNow - lastFrame >= (1000/60)) {
-            lastFrame = timeNow;
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glEnable(GL_DEPTH_TEST);
-            glClearColor(settings.clearColor.x, settings.clearColor.y, settings.clearColor.z, settings.clearColor.w);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-            glPointSize(2.0f);
-
-            glUseProgram(shaderProgramId);
-            glUniformMatrix4fv(1, 1, GL_FALSE, glm::value_ptr(modelMat));
-            glUniformMatrix4fv(2, 1, GL_FALSE, glm::value_ptr(viewMat));
-            glUniformMatrix4fv(3, 1, GL_FALSE, glm::value_ptr(projMat));
-
-            glBindVertexArray(tank.VAO);
-            glDrawElementsInstanced(GL_TRIANGLES, scene->mMeshes[0]->mNumFaces * 3, GL_UNSIGNED_INT, NULL, game.tanks.size());
-
-            glBindVertexArray(turret.VAO);
-            glDrawElementsInstanced(GL_TRIANGLES, scene->mMeshes[1]->mNumFaces * 3, GL_UNSIGNED_INT, NULL, game.tanks.size());
-
-            glBindVertexArray(gun.VAO);
-            glDrawElementsInstanced(GL_TRIANGLES, scene->mMeshes[2]->mNumFaces * 3, GL_UNSIGNED_INT, NULL, game.tanks.size());
-
-            glUseProgram(basicShaderProgramId);
-            glUniformMatrix4fv(1, 1, GL_FALSE, glm::value_ptr(modelMat));
-            glUniformMatrix4fv(2, 1, GL_FALSE, glm::value_ptr(viewMat));
-            glUniformMatrix4fv(3, 1, GL_FALSE, glm::value_ptr(projMat));
-            glUniform1f(4, 0.5);
-
-            glPointSize(20.0f);
-            glBindVertexArray(mousePointVAO);
-            glDrawArrays(GL_POINTS, 0, 1);
-
-            if (game.primaryButtonDown) {
-                glBindVertexArray(selectionQuadVAO);
-                glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, NULL);
-            }
-            
-            SDL_GL_SwapWindow(window);
-
-            auto glError = glGetError();
-
-            if (glError > 0) {
-                std::cout << "OpenGL Error: " << glError << std::endl;
-            }
-
-            tick(&game);
-
-            refreshBuffers(&game);
-
-
-            xRotation += 0.005f;
         }
     }
 
