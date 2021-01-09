@@ -71,6 +71,7 @@ struct Game {
 		1.0f, 1.0f, 0.0f,
 		-1.0f, 1.0f, 0.0f,
 	}; //length 12 (4 points)
+	Settings settings;
 };
 
 bool validTankRef(IndexReference tankRef, Game* game) {
@@ -79,6 +80,29 @@ bool validTankRef(IndexReference tankRef, Game* game) {
 	}
 
 	return true;
+}
+
+bool collideTankWithTanks(Game* game, IndexReference tankRef) {
+
+	glm::vec3 tankPos(1.0f);
+	tankPos.x = game->tanksData.positions[3 * tankRef.index];
+	tankPos.y = game->tanksData.positions[3 * tankRef.index + 1];
+	tankPos.z = game->tanksData.positions[3 * tankRef.index + 2];
+
+	for(int i=0; i<game->tanks.size(); i++) {
+		if (i != tankRef.index) {
+			glm::vec3 iPos(1.0f);
+			iPos.x = game->tanksData.positions[3 * i];
+			iPos.y = game->tanksData.positions[3 * i + 1];
+			iPos.z = game->tanksData.positions[3 * i + 2];
+
+			if (glm::length(iPos - tankPos) < game->settings.tankRadius) {
+				return true;
+			}
+		}
+	}
+
+	return false;
 }
 
 void tickTank(IndexReference tankRef, Game *game) {
@@ -112,6 +136,8 @@ void tickTank(IndexReference tankRef, Game *game) {
 
 			newDirection = glm::normalize(newDirection) * tank.speed;
 
+			
+
 			tank.direction.x = newDirection.x;
 			tank.direction.y = newDirection.y;
 			tank.direction.z = newDirection.z;
@@ -120,6 +146,13 @@ void tickTank(IndexReference tankRef, Game *game) {
 			game->tanksData.positions[3 * tankRef.index] += tank.direction.x;
 			game->tanksData.positions[3 * tankRef.index + 1] += tank.direction.y;
 			game->tanksData.positions[3 * tankRef.index + 2] += tank.direction.z;
+
+			if (collideTankWithTanks(game, tankRef)) {
+				//if the tank now collides with even one other tank,  reset the position
+				game->tanksData.positions[3 * tankRef.index] -= tank.direction.x;
+				game->tanksData.positions[3 * tankRef.index + 1] -= tank.direction.y;
+				game->tanksData.positions[3 * tankRef.index + 2] -= tank.direction.z;
+			}
 		}
 
 	}

@@ -290,6 +290,8 @@ int main() {
 
     Game game;
     initGame(&game);
+    //TODO: move loading settings into initGame
+    game.settings = settings;
 
     float mouseX{ 0.0f }, mouseY{ 0.0 };
 
