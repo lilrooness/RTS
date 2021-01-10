@@ -3,6 +3,7 @@
 #include <vector>
 #include <glm.hpp>
 #include <cstdlib>
+
 struct IndexReference;
 struct Index;
 struct MouseDragData;
@@ -18,6 +19,14 @@ bool rayGroundPlaneIntersection(glm::vec3 rayDirection, glm::vec3 rayStart, glm:
 IndexReference addTank(Game* game, float x, float y, float z, int health);
 
 const glm::vec4 DEFAULT_COLOR = glm::vec4(0.3f, 0.1f, 0.1f, 1.0f);
+
+struct flockingWeights {
+	float allignment{ 1.0f };
+	float cohesion{ 0.0f };
+	float seperation{ 0.0f };
+	float radius{ 10.0f };
+	float seperationRadius{ 3.0f };
+};
 
 struct IndexReference {
 	int generation;
@@ -72,7 +81,73 @@ struct Game {
 		-1.0f, 1.0f, 0.0f,
 	}; //length 12 (4 points)
 	Settings settings;
+	flockingWeights tankFlockingWeights;
 };
+
+
+float adjustHeading(Game *game, IndexReference inTankReference) {
+	float adjustment = 0.0f;
+
+	Tank& inTank = game->tanks[inTankReference.index];
+
+	glm::vec3 inTankPos;
+	inTankPos.x = game->tanksData.positions[3 * inTankReference.index];
+	inTankPos.y = game->tanksData.positions[3 * inTankReference.index + 1];
+	inTankPos.z = game->tanksData.positions[3 * inTankReference.index + 2];
+
+	vector<IndexReference> neighbourRefs;
+	vector<float> distances;
+
+	float headingsSum = game->tanksData.headings[inTankReference.index];
+	glm::vec3 positionsSum = inTankPos;
+
+	float seperationHaedingsSum = 0.0f;
+
+	//get neighbouring tanks
+	for (int i = 0; i < game->tanks.size(); i++) {
+		IndexReference tankRef{
+			game->tanks[i].index.generation,
+			i
+		};
+
+		Tank& thisTank = game->tanks[tankRef.index];
+		glm::vec3 tankPos;
+		tankPos.x = game->tanksData.positions[3 * tankRef.index];
+		tankPos.y = game->tanksData.positions[3 * tankRef.index + 1];
+		tankPos.z = game->tanksData.positions[3 * tankRef.index + 2];
+
+		float distance = glm::distance(tankPos, inTankPos);
+
+		if (distance <= game->tankFlockingWeights.radius && tankRef.index != inTankReference.index && inTank.waypoint.point == thisTank.waypoint.point ) {
+			distances.push_back(distance);
+			neighbourRefs.push_back(tankRef);
+			headingsSum += game->tanksData.headings[i];
+			positionsSum += tankPos;
+
+			if (distance <= game->tankFlockingWeights.seperationRadius) {
+				float distanceFactor = 1.0f - distance / game->tankFlockingWeights.seperationRadius;
+				seperationHaedingsSum += (atan2(tankPos.x - inTankPos.x, tankPos.z - inTankPos.z) * -1) * distanceFactor;
+			}
+		}
+	}
+
+	float averageHeading = headingsSum / (((float)neighbourRefs.size()) + 1.0f);
+	glm::vec3 averagePosition = positionsSum / (((float)neighbourRefs.size()) + 1.0f);
+
+	float headingCorrection_POSISION = atan2(averagePosition.x - inTankPos.x, averagePosition.z - inTankPos.z); -game->tanksData.headings[inTankReference.index];
+	float headingCorrection_ALLIGNMENT = averageHeading - game->tanksData.headings[inTankReference.index];
+	float headingCorrection_SEPERATION = seperationHaedingsSum;
+
+	headingCorrection_POSISION *= game->tankFlockingWeights.cohesion;
+	headingCorrection_ALLIGNMENT *= game->tankFlockingWeights.allignment;
+	headingCorrection_SEPERATION *= game->tankFlockingWeights.seperation;
+
+	//game->tanksData.headings[inTankReference.index] += headingCorrection_POSISION + haedingCorrection_ALLIGNMENT + headingCorrection_SEPERATION;
+
+	//return headingCorrection_POSISION + headingCorrection_ALLIGNMENT + headingCorrection_SEPERATION;
+
+	return headingCorrection_ALLIGNMENT;
+}
 
 bool validTankRef(IndexReference tankRef, Game* game) {
 	if (tankRef.generation != game->tanks[tankRef.index].index.generation || game->tanks[tankRef.index].index.deleted) {
@@ -123,8 +198,16 @@ void tickTank(IndexReference tankRef, Game *game) {
 		if (glm::length(pos - tank.waypoint.point) < 1) {
 			tank.waypoint.set = false;
 		} else {
+			
 			float newHeading = -1.0f * atan2(tank.waypoint.point.x - pos.x, tank.waypoint.point.z - pos.z);
 			game->tanksData.headings[tankRef.index] = newHeading;
+			
+
+			//TODO: FIX FLOCKING BEHAVIOUR
+			float headingCorrection = adjustHeading(game, tankRef);
+			game->tanksData.headings[tankRef.index] += headingCorrection;
+			newHeading += headingCorrection;
+
 
 			glm::vec4 newDirection =
 				glm::vec4(glm::vec3(0.0f, 0.0f, 1.0f), 1.0f) *
@@ -153,6 +236,7 @@ void tickTank(IndexReference tankRef, Game *game) {
 				game->tanksData.positions[3 * tankRef.index + 1] -= tank.direction.y;
 				game->tanksData.positions[3 * tankRef.index + 2] -= tank.direction.z;
 			}
+
 		}
 
 	}
