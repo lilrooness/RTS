@@ -20,12 +20,17 @@ IndexReference addTank(Game* game, float x, float y, float z, int health);
 
 const glm::vec4 DEFAULT_COLOR = glm::vec4(0.3f, 0.1f, 0.1f, 1.0f);
 
+struct flowCell {
+	float density{ 0.0f };
+	float discomfort{ 0.0f };
+};
+
 struct flockingWeights {
-	float allignment{ 1.0f };
+	float allignment{ 0.05f };
 	float cohesion{ 0.0f };
-	float seperation{ 0.0f };
-	float radius{ 10.0f };
-	float seperationRadius{ 3.0f };
+	float seperation{ 0.6f };
+	float radius{ 20.0f };
+	float seperationRadius{ 5.0f };
 };
 
 struct IndexReference {
@@ -74,79 +79,126 @@ struct Game {
 	bool secondaryButtonDown{ false };
 	bool secondaryButtonClicked{ false };
 	glm::vec3 currentMouseGroundIntersection;
+
 	GLfloat groundSelectionQuadVertices[12]{
 		-1.0f, -1.0f, 0.0f,
 		1.0f, -1.0f, 0.0f,
 		1.0f, 1.0f, 0.0f,
 		-1.0f, 1.0f, 0.0f,
 	}; //length 12 (4 points)
+
 	Settings settings;
 	flockingWeights tankFlockingWeights;
+	std::vector<flowCell> flowCells;
+	int flowMapWidth{ 300 };
+	int flowMapHeight{ 300 };
+	float flowCellSize{ 2.0f };
 };
 
 
-float adjustHeading(Game *game, IndexReference inTankReference) {
-	float adjustment = 0.0f;
+//float adjustHeading(Game *game, IndexReference inTankReference) {
+//	float adjustment = 0.0f;
+//
+//	Tank& inTank = game->tanks[inTankReference.index];
+//
+//	glm::vec3 inTankPos;
+//	inTankPos.x = game->tanksData.positions[3 * inTankReference.index];
+//	inTankPos.y = game->tanksData.positions[3 * inTankReference.index + 1];
+//	inTankPos.z = game->tanksData.positions[3 * inTankReference.index + 2];
+//
+//	vector<IndexReference> neighbourRefs;
+//	vector<float> distances;
+//
+//	float headingsSum = game->tanksData.headings[inTankReference.index];
+//	glm::vec3 positionsSum = inTankPos;
+//
+//	float seperationHaedingsSum = 0.0f;
+//
+//	//get neighbouring tanks
+//	for (int i = 0; i < game->tanks.size(); i++) {
+//		IndexReference tankRef{
+//			game->tanks[i].index.generation,
+//			i
+//		};
+//
+//		Tank& thisTank = game->tanks[tankRef.index];
+//		glm::vec3 tankPos;
+//		tankPos.x = game->tanksData.positions[3 * tankRef.index];
+//		tankPos.y = game->tanksData.positions[3 * tankRef.index + 1];
+//		tankPos.z = game->tanksData.positions[3 * tankRef.index + 2];
+//
+//		float distance = glm::distance(tankPos, inTankPos);
+//
+//		if (distance <= game->tankFlockingWeights.radius && tankRef.index != inTankReference.index && inTank.waypoint.point == thisTank.waypoint.point ) {
+//			distances.push_back(distance);
+//			neighbourRefs.push_back(tankRef);
+//			headingsSum += game->tanksData.headings[i];
+//			positionsSum += tankPos;
+//
+//			if (distance <= game->tankFlockingWeights.seperationRadius) {
+//				float distanceFactor = 1.0f - distance / game->tankFlockingWeights.seperationRadius;
+//				seperationHaedingsSum += (atan2(tankPos.z - inTankPos.z, tankPos.x - inTankPos.x) * -1) * distanceFactor;
+//			}
+//		}
+//	}
+//
+//	if (neighbourRefs.empty()) {
+//		return 0.0f;
+//	}
+//
+//	float averageHeading = headingsSum / ((float)neighbourRefs.size());
+//	glm::vec3 averagePosition = positionsSum / ((float)neighbourRefs.size());
+//
+//	float headingCorrection_POSISION = atan2(averagePosition.x - inTankPos.x, averagePosition.z - inTankPos.z) - game->tanksData.headings[inTankReference.index];
+//	float headingCorrection_ALLIGNMENT = averageHeading -game->tanksData.headings[inTankReference.index];
+//	float headingCorrection_SEPERATION = seperationHaedingsSum; //-game->tanksData.headings[inTankReference.index];
+//
+//	headingCorrection_POSISION *= game->tankFlockingWeights.cohesion;
+//	headingCorrection_ALLIGNMENT *= game->tankFlockingWeights.allignment;
+//	headingCorrection_SEPERATION *= game->tankFlockingWeights.seperation;
+//
+//	//game->tanksData.headings[inTankReference.index] += headingCorrection_POSISION + haedingCorrection_ALLIGNMENT + headingCorrection_SEPERATION;
+//
+//	return headingCorrection_POSISION + headingCorrection_ALLIGNMENT + headingCorrection_SEPERATION;
+//
+//	//return headingCorrection_ALLIGNMENT;
+//}
 
-	Tank& inTank = game->tanks[inTankReference.index];
-
-	glm::vec3 inTankPos;
-	inTankPos.x = game->tanksData.positions[3 * inTankReference.index];
-	inTankPos.y = game->tanksData.positions[3 * inTankReference.index + 1];
-	inTankPos.z = game->tanksData.positions[3 * inTankReference.index + 2];
-
-	vector<IndexReference> neighbourRefs;
-	vector<float> distances;
-
-	float headingsSum = game->tanksData.headings[inTankReference.index];
-	glm::vec3 positionsSum = inTankPos;
-
-	float seperationHaedingsSum = 0.0f;
-
-	//get neighbouring tanks
-	for (int i = 0; i < game->tanks.size(); i++) {
-		IndexReference tankRef{
-			game->tanks[i].index.generation,
-			i
-		};
-
-		Tank& thisTank = game->tanks[tankRef.index];
-		glm::vec3 tankPos;
-		tankPos.x = game->tanksData.positions[3 * tankRef.index];
-		tankPos.y = game->tanksData.positions[3 * tankRef.index + 1];
-		tankPos.z = game->tanksData.positions[3 * tankRef.index + 2];
-
-		float distance = glm::distance(tankPos, inTankPos);
-
-		if (distance <= game->tankFlockingWeights.radius && tankRef.index != inTankReference.index && inTank.waypoint.point == thisTank.waypoint.point ) {
-			distances.push_back(distance);
-			neighbourRefs.push_back(tankRef);
-			headingsSum += game->tanksData.headings[i];
-			positionsSum += tankPos;
-
-			if (distance <= game->tankFlockingWeights.seperationRadius) {
-				float distanceFactor = 1.0f - distance / game->tankFlockingWeights.seperationRadius;
-				seperationHaedingsSum += (atan2(tankPos.x - inTankPos.x, tankPos.z - inTankPos.z) * -1) * distanceFactor;
-			}
+void initFlowMap(Game *game) {
+	for (int h = 0; h < game->flowMapHeight; h++) {
+		for (int w = 0; w < game->flowMapWidth; w++) {
+			flowCell cell;
+			game->flowCells.push_back(cell);
 		}
 	}
+}
 
-	float averageHeading = headingsSum / (((float)neighbourRefs.size()) + 1.0f);
-	glm::vec3 averagePosition = positionsSum / (((float)neighbourRefs.size()) + 1.0f);
+int realCoordsToMapIndex(Game *game, float x, float y) {
 
-	float headingCorrection_POSISION = atan2(averagePosition.x - inTankPos.x, averagePosition.z - inTankPos.z); -game->tanksData.headings[inTankReference.index];
-	float headingCorrection_ALLIGNMENT = averageHeading - game->tanksData.headings[inTankReference.index];
-	float headingCorrection_SEPERATION = seperationHaedingsSum;
+	//calculate real size of map
+	float realMapWidth = game->flowCellSize * game->flowMapWidth;
+	float realMapHeight = game->flowCellSize * game->flowMapHeight;
 
-	headingCorrection_POSISION *= game->tankFlockingWeights.cohesion;
-	headingCorrection_ALLIGNMENT *= game->tankFlockingWeights.allignment;
-	headingCorrection_SEPERATION *= game->tankFlockingWeights.seperation;
+	//transform coordinates so that 0,0 is at the "bottom left", not in the middle
+	x += realMapWidth / 2;
+	y += realMapHeight / 2;
+	int xi = x / game->flowCellSize;
+	int yi = y / game->flowCellSize;
 
-	//game->tanksData.headings[inTankReference.index] += headingCorrection_POSISION + haedingCorrection_ALLIGNMENT + headingCorrection_SEPERATION;
+	int index = game->flowMapWidth * yi + xi;
+	if (index >= game->flowCells.size() || index < 0) {
+		return -1;
+	}
 
-	//return headingCorrection_POSISION + headingCorrection_ALLIGNMENT + headingCorrection_SEPERATION;
+	return index;
+}
 
-	return headingCorrection_ALLIGNMENT;
+void mapIndexToRealCorrds(Game* game, int mapIndex, float* coordsOut) {
+	int xi = mapIndex % game->flowMapWidth;
+	int yi = mapIndex / game->flowMapWidth;
+
+	coordsOut[0] = xi * game->flowCellSize;
+	coordsOut[1] = yi * game->flowCellSize;
 }
 
 bool validTankRef(IndexReference tankRef, Game* game) {
@@ -204,9 +256,10 @@ void tickTank(IndexReference tankRef, Game *game) {
 			
 
 			//TODO: FIX FLOCKING BEHAVIOUR
-			float headingCorrection = adjustHeading(game, tankRef);
-			game->tanksData.headings[tankRef.index] += headingCorrection;
-			newHeading += headingCorrection;
+			//float headingCorrection = adjustHeading(game, tankRef);
+			//std::cout << headingCorrection << std::endl;
+			//game->tanksData.headings[tankRef.index] += headingCorrection;
+			//newHeading += headingCorrection;
 
 
 			glm::vec4 newDirection =
