@@ -148,6 +148,14 @@ void refreshBuffers(Game* game) {
     refreshBuffer<GLfloat>(GL_ARRAY_BUFFER, gun.TINT_VBO, game->tanksData.tint, GL_STATIC_DRAW);
 
     glBindBuffer(GL_ARRAY_BUFFER, mousePointVBO);
+    float tempCoords[2];
+    tempCoords[0] = game->currentMouseGroundIntersection.x;
+    tempCoords[1] = game->currentMouseGroundIntersection.z;
+
+    int tmpIdx = realCoordsToMapIndex(game, tempCoords[0], tempCoords[1]);
+    mapIndexToRealCorrds(game, tmpIdx, tempCoords);
+    game->currentMouseGroundIntersection.x = tempCoords[0];
+    game->currentMouseGroundIntersection.z = tempCoords[1];
     glBufferData(GL_ARRAY_BUFFER, 3 * sizeof(GLfloat), glm::value_ptr(game->currentMouseGroundIntersection), GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
@@ -160,6 +168,16 @@ void initGame(Game* game) {
     for (int i = 0; i < 10; i++) {
         addTank(game, -30.0f + (i * 8.0f), 0.0f, 0.0f, 0.0f);
     }
+
+    
+
+    initFlowMap(game);
+
+    //float real1[2];
+    //mapIndexToRealCorrds(Game *game, 39436, real1);
+
+    //float real2[2];
+    //mapIndexToRealCorrds(Game * game, 39735, real2);
 }
 
 void render(Game* game, Settings settings, const aiScene* scene) {

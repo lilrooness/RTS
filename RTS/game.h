@@ -20,9 +20,18 @@ IndexReference addTank(Game* game, float x, float y, float z, int health);
 
 const glm::vec4 DEFAULT_COLOR = glm::vec4(0.3f, 0.1f, 0.1f, 1.0f);
 
+vector<int> getNeighbourCellIndexes(Game* game, int cellIndex);
+int realCoordsToMapIndex(Game* game, float x, float y);
+float getFScoreForGidPoint(Game* game, int currentCellIndex, int neighbourCellIndex, int waypointCellIndex);
+int mapCoordsToMapIndex(Game* game, int x, int y);
+void mapIndexToMapCoords(Game* game, int mapIndex, int* coordsOut);
+void mapIndexToRealCorrds(Game* game, int mapIndex, float* coordsOut);
+
 struct flowCell {
-	float density{ 0.0f };
-	float discomfort{ 0.0f };
+	//float density{ 0.0f };
+	int discomfort{ 0 };
+	int x;
+	int y;
 };
 
 struct flockingWeights {
@@ -95,82 +104,131 @@ struct Game {
 	float flowCellSize{ 2.0f };
 };
 
+float getFScoreForGidPoint(Game *game, int currentCellIndex, int neighbourCellIndex, int waypointCellIndex) {
+	auto currentCell = game->flowCells[currentCellIndex];
+	auto waypointCell = game->flowCells[waypointCellIndex];
+	auto neighbourCell = game->flowCells[neighbourCellIndex];
+	
+	int waypointMapCoords[2];
+	mapIndexToMapCoords(game, waypointCellIndex, waypointMapCoords);
 
-//float adjustHeading(Game *game, IndexReference inTankReference) {
-//	float adjustment = 0.0f;
-//
-//	Tank& inTank = game->tanks[inTankReference.index];
-//
-//	glm::vec3 inTankPos;
-//	inTankPos.x = game->tanksData.positions[3 * inTankReference.index];
-//	inTankPos.y = game->tanksData.positions[3 * inTankReference.index + 1];
-//	inTankPos.z = game->tanksData.positions[3 * inTankReference.index + 2];
-//
-//	vector<IndexReference> neighbourRefs;
-//	vector<float> distances;
-//
-//	float headingsSum = game->tanksData.headings[inTankReference.index];
-//	glm::vec3 positionsSum = inTankPos;
-//
-//	float seperationHaedingsSum = 0.0f;
-//
-//	//get neighbouring tanks
-//	for (int i = 0; i < game->tanks.size(); i++) {
-//		IndexReference tankRef{
-//			game->tanks[i].index.generation,
-//			i
-//		};
-//
-//		Tank& thisTank = game->tanks[tankRef.index];
-//		glm::vec3 tankPos;
-//		tankPos.x = game->tanksData.positions[3 * tankRef.index];
-//		tankPos.y = game->tanksData.positions[3 * tankRef.index + 1];
-//		tankPos.z = game->tanksData.positions[3 * tankRef.index + 2];
-//
-//		float distance = glm::distance(tankPos, inTankPos);
-//
-//		if (distance <= game->tankFlockingWeights.radius && tankRef.index != inTankReference.index && inTank.waypoint.point == thisTank.waypoint.point ) {
-//			distances.push_back(distance);
-//			neighbourRefs.push_back(tankRef);
-//			headingsSum += game->tanksData.headings[i];
-//			positionsSum += tankPos;
-//
-//			if (distance <= game->tankFlockingWeights.seperationRadius) {
-//				float distanceFactor = 1.0f - distance / game->tankFlockingWeights.seperationRadius;
-//				seperationHaedingsSum += (atan2(tankPos.z - inTankPos.z, tankPos.x - inTankPos.x) * -1) * distanceFactor;
-//			}
-//		}
-//	}
-//
-//	if (neighbourRefs.empty()) {
-//		return 0.0f;
-//	}
-//
-//	float averageHeading = headingsSum / ((float)neighbourRefs.size());
-//	glm::vec3 averagePosition = positionsSum / ((float)neighbourRefs.size());
-//
-//	float headingCorrection_POSISION = atan2(averagePosition.x - inTankPos.x, averagePosition.z - inTankPos.z) - game->tanksData.headings[inTankReference.index];
-//	float headingCorrection_ALLIGNMENT = averageHeading -game->tanksData.headings[inTankReference.index];
-//	float headingCorrection_SEPERATION = seperationHaedingsSum; //-game->tanksData.headings[inTankReference.index];
-//
-//	headingCorrection_POSISION *= game->tankFlockingWeights.cohesion;
-//	headingCorrection_ALLIGNMENT *= game->tankFlockingWeights.allignment;
-//	headingCorrection_SEPERATION *= game->tankFlockingWeights.seperation;
-//
-//	//game->tanksData.headings[inTankReference.index] += headingCorrection_POSISION + haedingCorrection_ALLIGNMENT + headingCorrection_SEPERATION;
-//
-//	return headingCorrection_POSISION + headingCorrection_ALLIGNMENT + headingCorrection_SEPERATION;
-//
-//	//return headingCorrection_ALLIGNMENT;
-//}
+	int neighbourMapCoords[2];
+	mapIndexToMapCoords(game, neighbourCellIndex, neighbourMapCoords);
+
+	float dist = pow(waypointMapCoords[0] - neighbourMapCoords[0], 2) + pow(waypointMapCoords[1] - neighbourMapCoords[1], 2);
+
+	int discomfort = currentCell.discomfort - neighbourCell.discomfort;
+
+	return dist;//  +discomfort;
+}
+
+int getBestNeighbouringCellIndex(Game* game, IndexReference tankReference, Waypoint waypoint) {
+	float tankX = game->tanksData.positions[3 * tankReference.index];
+	float tankY = game->tanksData.positions[3 * tankReference.index + 1];
+	float tankZ = game->tanksData.positions[3 * tankReference.index + 2];
+	int tankCurrentCellIndex = realCoordsToMapIndex(game, tankX, tankZ);
+	int waypointIndex = realCoordsToMapIndex(game, waypoint.point.x, waypoint.point.z);
+
+	vector<int> neighbouringCellIndexes = getNeighbourCellIndexes(game, tankCurrentCellIndex);
+	vector<float> neighbourScores;
+
+	for (int i = 0; i < neighbouringCellIndexes.size(); i++) {
+		neighbourScores.push_back(getFScoreForGidPoint(game, tankCurrentCellIndex, neighbouringCellIndexes[i], waypointIndex));
+	}
+
+	float lowestScore = 0;
+	int lowestScoreIndex = -1;
+
+	for (int i = 0; i < neighbourScores.size(); i++) {
+		if (lowestScoreIndex == -1) {
+			lowestScoreIndex = i;
+			lowestScore = neighbourScores[i];
+		}
+		else if (lowestScore > neighbourScores[i]) {
+			lowestScoreIndex = i;
+			lowestScore = neighbourScores[i];
+		}
+	}
+	return neighbouringCellIndexes[lowestScoreIndex];
+}
+
+vector<int> getNeighbourCellIndexes(Game* game, int cellIndex) {
+	vector<int> cellIndexes;
+
+	int cellCoords[2];
+	mapIndexToMapCoords(game, cellIndex, cellCoords);
+
+	int above = mapCoordsToMapIndex(game, cellCoords[0], cellCoords[1] + 1);
+	int below = mapCoordsToMapIndex(game, cellCoords[0], cellCoords[1] - 1);
+	int right = mapCoordsToMapIndex(game, cellCoords[0] + 1, cellCoords[1]);
+	int left = mapCoordsToMapIndex(game, cellCoords[0] - 1, cellCoords[1]);
+
+	int topRight = mapCoordsToMapIndex(game, cellCoords[0] + 1, cellCoords[1] + 1);
+	int topLeft = mapCoordsToMapIndex(game, cellCoords[0] - 1, cellCoords[1] + 1);
+	int bottomLeft = mapCoordsToMapIndex(game, cellCoords[0] - 1, cellCoords[1] - 1);
+	int bottomRight = mapCoordsToMapIndex(game, cellCoords[0] + 1, cellCoords[1] - 1);
+
+
+	if (bottomLeft > -1) {
+		cellIndexes.push_back(bottomLeft);
+	}
+	if (bottomRight > -1) {
+		cellIndexes.push_back(bottomRight);
+	}
+	if (topLeft > -1) {
+		cellIndexes.push_back(topLeft);
+	}
+	if (topRight > -1) {
+		cellIndexes.push_back(topRight);
+	}
+
+
+	if (above > -1) {
+		cellIndexes.push_back(above);
+	}
+	if (below > -1) {
+		cellIndexes.push_back(below);
+	}
+	if (right > -1) {
+		cellIndexes.push_back(right);
+	}
+	if (left > -1) {
+		cellIndexes.push_back(left);
+	}
+
+	return cellIndexes;
+}
 
 void initFlowMap(Game *game) {
 	for (int h = 0; h < game->flowMapHeight; h++) {
 		for (int w = 0; w < game->flowMapWidth; w++) {
 			flowCell cell;
+			cell.x = w;
+			cell.y = h;
 			game->flowCells.push_back(cell);
 		}
 	}
+}
+
+int mapCoordsToMapIndex(Game* game, int x, int y) {
+	int index = game->flowMapWidth * y + x;
+
+	if (index < 0) {
+		return -1;
+	}
+	else if (index >= game->flowCells.size()) {
+		return -1;
+	}
+
+	return index;
+}
+
+void mapIndexToMapCoords(Game* game, int mapIndex, int *coordsOut) {
+	int xi = mapIndex % game->flowMapWidth;
+	int yi = mapIndex / game->flowMapWidth;
+
+	coordsOut[0] = xi;
+	coordsOut[1] = yi;
 }
 
 int realCoordsToMapIndex(Game *game, float x, float y) {
@@ -180,12 +238,14 @@ int realCoordsToMapIndex(Game *game, float x, float y) {
 	float realMapHeight = game->flowCellSize * game->flowMapHeight;
 
 	//transform coordinates so that 0,0 is at the "bottom left", not in the middle
-	x += realMapWidth / 2;
-	y += realMapHeight / 2;
+	x += realMapWidth / 2.0f;
+	y += realMapHeight / 2.0f;
+
 	int xi = x / game->flowCellSize;
 	int yi = y / game->flowCellSize;
 
 	int index = game->flowMapWidth * yi + xi;
+
 	if (index >= game->flowCells.size() || index < 0) {
 		return -1;
 	}
@@ -197,8 +257,12 @@ void mapIndexToRealCorrds(Game* game, int mapIndex, float* coordsOut) {
 	int xi = mapIndex % game->flowMapWidth;
 	int yi = mapIndex / game->flowMapWidth;
 
-	coordsOut[0] = xi * game->flowCellSize;
-	coordsOut[1] = yi * game->flowCellSize;
+	//calculate real size of map
+	float realMapWidth = game->flowCellSize * game->flowMapWidth;
+	float realMapHeight = game->flowCellSize * game->flowMapHeight;
+
+	coordsOut[0] = (float)xi * game->flowCellSize - realMapWidth / 2.0f;
+	coordsOut[1] = (float)yi * game->flowCellSize - realMapHeight / 2.0f;
 }
 
 bool validTankRef(IndexReference tankRef, Game* game) {
@@ -207,29 +271,6 @@ bool validTankRef(IndexReference tankRef, Game* game) {
 	}
 
 	return true;
-}
-
-bool collideTankWithTanks(Game* game, IndexReference tankRef) {
-
-	glm::vec3 tankPos(1.0f);
-	tankPos.x = game->tanksData.positions[3 * tankRef.index];
-	tankPos.y = game->tanksData.positions[3 * tankRef.index + 1];
-	tankPos.z = game->tanksData.positions[3 * tankRef.index + 2];
-
-	for(int i=0; i<game->tanks.size(); i++) {
-		if (i != tankRef.index) {
-			glm::vec3 iPos(1.0f);
-			iPos.x = game->tanksData.positions[3 * i];
-			iPos.y = game->tanksData.positions[3 * i + 1];
-			iPos.z = game->tanksData.positions[3 * i + 2];
-
-			if (glm::length(iPos - tankPos) < game->settings.tankRadius) {
-				return true;
-			}
-		}
-	}
-
-	return false;
 }
 
 void tickTank(IndexReference tankRef, Game *game) {
@@ -250,29 +291,30 @@ void tickTank(IndexReference tankRef, Game *game) {
 		if (glm::length(pos - tank.waypoint.point) < 1) {
 			tank.waypoint.set = false;
 		} else {
+
+			int currentTankCellIndex = realCoordsToMapIndex(game, pos.x, pos.z);
+			float realCurrentCellCoords[2];
+			mapIndexToRealCorrds(game, currentTankCellIndex, realCurrentCellCoords);
+
+			int cellIndex = getBestNeighbouringCellIndex(game, tankRef, tank.waypoint);
+
+			float nextWaypointCoords[2];
+			mapIndexToRealCorrds(game, cellIndex, nextWaypointCoords);
+
 			
-			float newHeading = -1.0f * atan2(tank.waypoint.point.x - pos.x, tank.waypoint.point.z - pos.z);
+			float newHeading = -1.0f * atan2(nextWaypointCoords[0] - realCurrentCellCoords[0], nextWaypointCoords[1] - realCurrentCellCoords[1]);
+
 			game->tanksData.headings[tankRef.index] = newHeading;
-			
-
-			//TODO: FIX FLOCKING BEHAVIOUR
-			//float headingCorrection = adjustHeading(game, tankRef);
-			//std::cout << headingCorrection << std::endl;
-			//game->tanksData.headings[tankRef.index] += headingCorrection;
-			//newHeading += headingCorrection;
-
 
 			glm::vec4 newDirection =
 				glm::vec4(glm::vec3(0.0f, 0.0f, 1.0f), 1.0f) *
 				glm::rotate(
 					glm::mat4(1.0),
-					newHeading,
+					game->tanksData.headings[tankRef.index],
 					glm::vec3(0.0f, 1.0f, 0.0f)
 				);
 
 			newDirection = glm::normalize(newDirection) * tank.speed;
-
-			
 
 			tank.direction.x = newDirection.x;
 			tank.direction.y = newDirection.y;
@@ -282,14 +324,6 @@ void tickTank(IndexReference tankRef, Game *game) {
 			game->tanksData.positions[3 * tankRef.index] += tank.direction.x;
 			game->tanksData.positions[3 * tankRef.index + 1] += tank.direction.y;
 			game->tanksData.positions[3 * tankRef.index + 2] += tank.direction.z;
-
-			if (collideTankWithTanks(game, tankRef)) {
-				//if the tank now collides with even one other tank,  reset the position
-				game->tanksData.positions[3 * tankRef.index] -= tank.direction.x;
-				game->tanksData.positions[3 * tankRef.index + 1] -= tank.direction.y;
-				game->tanksData.positions[3 * tankRef.index + 2] -= tank.direction.z;
-			}
-
 		}
 
 	}
